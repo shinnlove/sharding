@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:mvc="http://www.springframework.org/schema/mvc"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:c="http://www.springframework.org/schema/c" xmlns:p="http://www.springframework.org/schema/p"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xmlns:tx="http://www.springframework.org/schema/tx" xmlns:aop="http://www.springframework.org/schema/aop"
+       xmlns:sharding="http://shardingjdbc.io/schema/shardingjdbc/sharding"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+       http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc.xsd
+       http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+       http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd
+       http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd
+       http://shardingjdbc.io/schema/shardingjdbc/sharding http://shardingjdbc.io/schema/shardingjdbc/sharding.xsd"
+       default-autowire="byName">
+
+    <!-- sharding jdbc的配置 -->
+
+    <!-- 引入两个数据源的链接配置 -->
+    <context:property-placeholder location="classpath:META-INF/dbconf/DS_*.properties"
+                                  file-encoding="utf-8" ignore-unresolvable="true"/>
+
+    <!-- 数据源实例1 -->
+    <bean id="ds_0" class="org.apache.commons.dbcp2.BasicDataSource" destroy-method="close">
+        <property name="driverClassName" value="${ds_1.jdbc.driver}"/>
+        <property name="url" value="${ds_1.jdbc.url}"/>
+        <property name="username" value="${ds_1.jdbc.username}"/>
+        <property name="password" value="${ds_1.jdbc.password}"/>
+    </bean>
+
+    <!-- 数据源实例2 -->
+    <bean id="ds_1" class="org.apache.commons.dbcp2.BasicDataSource" destroy-method="close">
+        <property name="driverClassName" value="${ds_2.jdbc.driver}"/>
+        <property name="url" value="${ds_2.jdbc.url}"/>
+        <property name="username" value="${ds_2.jdbc.username}"/>
+        <property name="password" value="${ds_2.jdbc.password}"/>
+    </bean>
+
+    <!-- 数据库路由使用user_id -->
+    <sharding:standard-strategy id="databaseShardingStrategy"
+                                sharding-column="user_id"
+                                precise-algorithm-class="com.shinnlove.sharding.algorithm.DatabaseShardingAlgorithm"/>
+
+    <!-- Order表路由使用order_id -->
+    <sharding:standard-strategy id="orderTableShardingStrategy"
+                                sharding-column="order_id"
+                                precise-algorithm-class="com.shinnlove.sharding.algorithm.TableShardingAlgorithm"/>
+
+    <!-- OrderItem表路由使用order_id -->
+    <sharding:standard-strategy id="orderItemTableShardingStrategy"
+                                sharding-column="order_id"
+                                precise-algorithm-class="com.shinnlove.sharding.algorithm.TableShardingAlgorithm"/>
+
+    <!-- 分片路由规则 -->
+    <sharding:data-source id="shardingDataSource">
+        <sharding:sharding-rule data-source-names="ds_0,ds_1">
+            <sharding:table-rules>
+                <!-- 一张分表策略 -->
+                <sharding:table-rule logic-table="t_order"
+                                     actual-data-nodes="ds_${0..1}.t_order_${0..1}"
+                                     database-strategy-ref="databaseShardingStrategy"
+                                     table-strategy-ref="orderTableShardingStrategy"/>
+                <sharding:table-rule logic-table="t_order_item"
+                                     actual-data-nodes="ds_${0..1}.t_order_item_${0..1}"
+                                     database-strategy-ref="databaseShardingStrategy"
+                                     table-strategy-ref="orderItemTableShardingStrategy"/>
+            </sharding:table-rules>
+        </sharding:sharding-rule>
+    </sharding:data-source>
+
+    <!-- 配置mybatis的sqlSessionFactory -->
+    <bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+        <property name="dataSource" ref="shardingDataSource"/>
+        <property name="configLocation" value="classpath:META-INF/mybatis/sqlMapConfig.xml"/>
+        <property name="mapperLocations" value="classpath:META-INF/mapper/*Mapper.xml"/>
+    </bean>
+
+    <!-- mybatis 的 Mapper扫描配置 -->
+    <bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+        <property name="basePackage" value="com.shinnlove.sharding.jdbc.dao"/>
+        <property name="sqlSessionFactoryBeanName" value="sqlSessionFactory"/>
+    </bean>
+
+</beans>
